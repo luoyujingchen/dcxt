@@ -1,28 +1,36 @@
-from flask import Flask
+import os
+
+from flask import Flask, request, redirect, url_for, render_template
 from flask_restful import abort, reqparse, Resource, Api
 from flask_restful.representations import json
+from flask_uploads import UploadSet, IMAGES, configure_uploads, patch_request_class
 from peewee import *
 from playhouse.shortcuts import model_to_dict
+
 
 app = Flask(__name__)
 api = Api(app)
 
-
-@app.route('/')
-def hello_world():
-    return 'Hello World!'
-
-
-FOODS = {
-    'foodid1': {'name': 'food 1', 'price': 24},
-    'foodid2': {'name': 'food 2', 'price': 25},
-    'foodid3': {'name': 'food 3', 'price': 26},
-}
+app.config['UPLOADED_PHOTOS_DEST'] = os.path.dirname(os.path.abspath(__file__))
+photos = UploadSet('photos',IMAGES)
+configure_uploads(app,photos)
+patch_request_class(app,12*1024*1024)
 
 
-def abort_if_food_doesnt_exist(food_id):
-    if food_id not in FOODS:
-        abort(404, message="food {} doesn't exist".format(food_id))
+@app.route('/upload', methods=['POST', 'GET'])
+def upload():
+    if request.method == 'POST' and 'photo' in request.files:
+        filename = photos.save(request.files['photo'])
+        return redirect(url_for('show', name=filename))
+    return render_template('upload.html')
+
+
+@app.route('/photo/<name>')
+def show(name):
+    if name is None:
+        abort(404)
+    url = photos.url(name)
+    return render_template('show.html', url=url, name=name)
 
 
 parser = reqparse.RequestParser()
@@ -56,7 +64,7 @@ class Food(Resource):
         dish = Dish.get(Dish.id == food_id)
         keys = args.keys()
         for key in keys:
-            if args[key]!= None:
+            if args[key] != None:
                 dish.__dict__['__data__'][key] = args[key]
         return dish.save(), 201
 
@@ -70,7 +78,6 @@ class FoodList(Resource):
         for row in foods:
             fs.append(row)
         return fs
-
 
     def post(self):
         args = parser.parse_args()
